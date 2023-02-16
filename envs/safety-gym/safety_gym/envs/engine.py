@@ -333,7 +333,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
         self.viewer = None
         self.world = None
         self.clear()
-
+        # import pdb; pdb.set_trace()
         self.seed(self._seed)
         self.done = True
 
@@ -991,7 +991,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
 
     def reset(self):
         ''' Reset the physics simulation and return observation '''
-        self._seed += 1  # Increment seed
+        #self._seed += 1  # Increment seed
         self.rs = np.random.RandomState(self._seed)
         self.done = False
         self.steps = 0  # Count of steps taken in this episode
@@ -1138,7 +1138,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
             pos = np.asarray(pos)
             if pos.shape == (3, ):
                 pos = pos[:2]  # Truncate Z coordinate
-            z = np.complex(*self.ego_xy(pos))  # X, Y as real, imaginary components
+            z = complex(*self.ego_xy(pos))  # X, Y as real, imaginary components
             dist = np.abs(z)
             angle = np.angle(z) % (np.pi * 2)
             bin_size = (np.pi * 2) / self.lidar_num_bins
@@ -1159,9 +1159,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
                 obs[bin_minus] = max(obs[bin_minus], (1 - alias) * sensor)
         return obs
 
-    def obs(self):
-        ''' Return the observation of our agent '''
-        self.sim.forward()  # Needed to get sensordata correct
+    def build_obs(self):
         obs = {}
 
         if self.observe_goal_dist:
@@ -1196,8 +1194,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
             # Process angular position sensors
             if self.sensors_angle_components:
                 for sensor in self.robot.hinge_pos_names:
-                    theta = float(
-                        self.world.get_sensor(sensor))  # Ensure not 1D, 1-element array
+                    theta = float(self.world.get_sensor(sensor))  # Ensure not 1D, 1-element array
                     obs[sensor] = np.array([np.sin(theta), np.cos(theta)])
                 for sensor in self.robot.ballquat_names:
                     quat = self.world.get_sensor(sensor)
@@ -1209,8 +1206,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
                     obs[sensor] = self.world.get_sensor(sensor)
         if self.observe_remaining:
             obs['remaining'] = np.array([self.steps / self.num_steps])
-            assert 0.0 <= obs['remaining'][0] <= 1.0, 'bad remaining {}'.format(
-                obs['remaining'])
+            assert 0.0 <= obs['remaining'][0] <= 1.0, 'bad remaining {}'.format(obs['remaining'])
         if self.walls_num and self.observe_walls:
             obs['walls_lidar'] = self.obs_lidar(self.walls_pos, GROUP_WALL)
         if self.observe_hazards:
@@ -1235,6 +1231,14 @@ class Engine(gym.Env, gym.utils.EzPickle):
             obs['ctrl'] = self.data.ctrl.copy()
         if self.observe_vision:
             obs['vision'] = self.obs_vision()
+
+        return obs
+
+    def obs(self):
+        ''' Return the observation of our agent '''
+        self.sim.forward()  # Needed to get sensordata correct
+        obs = self.build_obs()
+
         if self.observation_flatten:
             flat_obs = np.zeros(self.obs_flat_size)
             offset = 0
@@ -1243,9 +1247,96 @@ class Engine(gym.Env, gym.utils.EzPickle):
                 flat_obs[offset:offset + k_size] = obs[k].flat
                 offset += k_size
             obs = flat_obs
-        assert self.observation_space.contains(
-            obs), f'Bad obs {obs} {self.observation_space}'
+        assert self.observation_space.contains(obs), f'Bad obs {obs} {self.observation_space}'
         return obs
+
+    # def obs(self):
+    #     ''' Return the observation of our agent '''
+    #     self.sim.forward()  # Needed to get sensordata correct
+    #     obs = {}
+
+    #     if self.observe_goal_dist:
+    #         obs['goal_dist'] = np.array([np.exp(-self.dist_goal())])
+    #     if self.observe_goal_comp:
+    #         obs['goal_compass'] = self.obs_compass(self.goal_pos)
+    #     if self.observe_goal_lidar:
+    #         obs['goal_lidar'] = self.obs_lidar([self.goal_pos], GROUP_GOAL)
+    #     if self.task == 'push':
+    #         box_pos = self.box_pos
+    #         if self.observe_box_comp:
+    #             obs['box_compass'] = self.obs_compass(box_pos)
+    #         if self.observe_box_lidar:
+    #             obs['box_lidar'] = self.obs_lidar([box_pos], GROUP_BOX)
+    #     if self.task == 'circle' and self.observe_circle:
+    #         obs['circle_lidar'] = self.obs_lidar([self.goal_pos], GROUP_CIRCLE)
+    #     if self.observe_freejoint:
+    #         joint_id = self.model.joint_name2id('robot')
+    #         joint_qposadr = self.model.jnt_qposadr[joint_id]
+    #         assert joint_qposadr == 0  # Needs to be the first entry in qpos
+    #         obs['freejoint'] = self.data.qpos[:7]
+    #     if self.observe_com:
+    #         obs['com'] = self.world.robot_com()
+    #     if self.observe_sensors:
+    #         # Sensors which can be read directly, without processing
+    #         for sensor in self.sensors_obs:  # Explicitly listed sensors
+    #             obs[sensor] = self.world.get_sensor(sensor)
+    #         for sensor in self.robot.hinge_vel_names:
+    #             obs[sensor] = self.world.get_sensor(sensor)
+    #         for sensor in self.robot.ballangvel_names:
+    #             obs[sensor] = self.world.get_sensor(sensor)
+    #         # Process angular position sensors
+    #         if self.sensors_angle_components:
+    #             for sensor in self.robot.hinge_pos_names:
+    #                 theta = float(
+    #                     self.world.get_sensor(sensor))  # Ensure not 1D, 1-element array
+    #                 obs[sensor] = np.array([np.sin(theta), np.cos(theta)])
+    #             for sensor in self.robot.ballquat_names:
+    #                 quat = self.world.get_sensor(sensor)
+    #                 obs[sensor] = quat2mat(quat)
+    #         else:  # Otherwise read sensors directly
+    #             for sensor in self.robot.hinge_pos_names:
+    #                 obs[sensor] = self.world.get_sensor(sensor)
+    #             for sensor in self.robot.ballquat_names:
+    #                 obs[sensor] = self.world.get_sensor(sensor)
+    #     if self.observe_remaining:
+    #         obs['remaining'] = np.array([self.steps / self.num_steps])
+    #         assert 0.0 <= obs['remaining'][0] <= 1.0, 'bad remaining {}'.format(
+    #             obs['remaining'])
+    #     if self.walls_num and self.observe_walls:
+    #         obs['walls_lidar'] = self.obs_lidar(self.walls_pos, GROUP_WALL)
+    #     if self.observe_hazards:
+    #         obs['hazards_lidar'] = self.obs_lidar(self.hazards_pos, GROUP_HAZARD)
+    #     if self.observe_vases:
+    #         obs['vases_lidar'] = self.obs_lidar(self.vases_pos, GROUP_VASE)
+    #     if self.gremlins_num and self.observe_gremlins:
+    #         obs['gremlins_lidar'] = self.obs_lidar(self.gremlins_obj_pos, GROUP_GREMLIN)
+    #     if self.pillars_num and self.observe_pillars:
+    #         obs['pillars_lidar'] = self.obs_lidar(self.pillars_pos, GROUP_PILLAR)
+    #     if self.buttons_num and self.observe_buttons:
+    #         # Buttons observation is zero while buttons are resetting
+    #         if self.buttons_timer == 0:
+    #             obs['buttons_lidar'] = self.obs_lidar(self.buttons_pos, GROUP_BUTTON)
+    #         else:
+    #             obs['buttons_lidar'] = np.zeros(self.lidar_num_bins)
+    #     if self.observe_qpos:
+    #         obs['qpos'] = self.data.qpos.copy()
+    #     if self.observe_qvel:
+    #         obs['qvel'] = self.data.qvel.copy()
+    #     if self.observe_ctrl:
+    #         obs['ctrl'] = self.data.ctrl.copy()
+    #     if self.observe_vision:
+    #         obs['vision'] = self.obs_vision()
+    #     if self.observation_flatten:
+    #         flat_obs = np.zeros(self.obs_flat_size)
+    #         offset = 0
+    #         for k in sorted(self.obs_space_dict.keys()):
+    #             k_size = np.prod(obs[k].shape)
+    #             flat_obs[offset:offset + k_size] = obs[k].flat
+    #             offset += k_size
+    #         obs = flat_obs
+    #     assert self.observation_space.contains(
+    #         obs), f'Bad obs {obs} {self.observation_space}'
+    #     return obs
 
     def cost(self):
         ''' Calculate the current costs and return a dict '''
